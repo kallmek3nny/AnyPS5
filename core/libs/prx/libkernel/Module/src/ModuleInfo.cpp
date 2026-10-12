@@ -397,6 +397,26 @@ int APS5_VABI sceKernelGetModuleInfo(KernelModule handle, ModuleInfo* info) {
     return SCE_KERNEL_ERROR_ESRCH;
 }
 
+int APS5_VABI sceKernelGetLibkernelTextLocation(std::uint64_t* address, std::uint64_t* size) {
+    if (!address || !size) throw std::invalid_argument("sceKernelGetLibkernelTextLocation: output is null");
+    const auto images = GuestImages();
+    if (images.empty()) throw std::runtime_error("sceKernelGetLibkernelTextLocation: the main program is not loaded");
+    ModuleInfo info{};
+    info.st_size = sizeof(ModuleInfo);
+#ifdef _WIN32
+    const bool found = Fill(images.front().address, info);
+#else
+    ImageSearch<ModuleInfo> search{images.front().address, &info, false};
+    dl_iterate_phdr(FindImage<ModuleInfo>, &search);
+    const bool found = search.found;
+#endif
+    if (!found || info.segment_count == 0)
+        throw std::runtime_error("sceKernelGetLibkernelTextLocation: the main program has no segments");
+    *address = info.segments[0].address;
+    *size = info.segments[0].size;
+    return 0;
+}
+
 std::uint64_t GuestImageSegmentBytes_nid_no_patch() {
     return GuestSegmentBytes();
 }
