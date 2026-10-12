@@ -172,10 +172,14 @@ void stateTests() {
     Require(AgcDriver::Graphics::DrawRejection(queue, false).empty(), "primitive restart rejected a non-indexed draw");
     queue.userConfig[0x242] = 9;
     Require(AgcDriver::Graphics::DrawRejection(queue, true).find("point, line and triangle") != std::string::npos, "primitive restart was accepted for patches");
-    queue.userConfig[0x242] = 6;
     queue.context[0x103] = 0xffffffffu;
-    Require(AgcDriver::Graphics::DrawRejection(queue, true).empty(), "primitive restart was rejected for an indexed strip");
-    Require(AgcDriver::Graphics::DecodeState(queue).primitiveRestart, "primitive restart was not decoded for a strip");
+    for (const auto primitive : {3u, 6u}) {
+        queue.userConfig[0x242] = primitive;
+        Require(AgcDriver::Graphics::DrawRejection(queue, true).empty(), "primitive restart was rejected for an indexed strip");
+        const auto strip = AgcDriver::Graphics::DecodeState(queue);
+        Require(strip.topology == (primitive == 3u ? VK_PRIMITIVE_TOPOLOGY_LINE_STRIP : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP), "strip primitive decoded to the wrong topology");
+        Require(strip.primitiveRestart, "primitive restart was not decoded for a strip");
+    }
     queue.context[0x103] = 5;
     Require(AgcDriver::Graphics::DrawRejection(queue, true).find("all ones") != std::string::npos, "a restart index other than all ones was accepted");
     queue = makeState();

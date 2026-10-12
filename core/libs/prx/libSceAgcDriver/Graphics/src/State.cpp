@@ -677,6 +677,7 @@ State DecodeState(const QueueState& queue, bool vertexWorkgroup) {
     switch (primitive) {
         case 1: Require(result.stages.mesh.has_value(), "point-list vertex rendering requires point-size output support"); result.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST; break;
         case 2: result.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST; break;
+        case 3: result.topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP; break;
         case 7:
         case 17:
             Require(result.stages.path == ShaderPath::Vertex, "rect-list requires vertex routing");
