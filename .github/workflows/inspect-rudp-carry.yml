@@ -32,7 +32,22 @@ jobs:
             echo 'CONFLICTS_BEGIN'
             git diff --name-only --diff-filter=U
             echo 'CONFLICTS_END'
-            git status --short
+            git checkout --conflict=diff3 -- core/libs/prx/libSceRudp/Export.cpp docs/dev/TechnicalDebt.md
+            python3 - <<'PY'
+          from pathlib import Path
+          for name in ['core/libs/prx/libSceRudp/Export.cpp', 'docs/dev/TechnicalDebt.md']:
+              print(f'===== {name} =====')
+              lines = Path(name).read_text().splitlines()
+              for i, line in enumerate(lines):
+                  if line.startswith('<<<<<<<'):
+                      end = i
+                      while end < len(lines) and not lines[end].startswith('>>>>>>>'):
+                          end += 1
+                      lo = max(0, i - 8)
+                      hi = min(len(lines), end + 9)
+                      print('\n'.join(f'{n+1}: {lines[n]}' for n in range(lo, hi)))
+                      print('===== HUNK END =====')
+          PY
           fi
       - name: Keep inspection non-red
         if: always()
