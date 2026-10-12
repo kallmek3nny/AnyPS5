@@ -2,6 +2,7 @@
 #include "prx/libkernel/Time/include/Time.hpp"
 #include "prx/libc/include/General.hpp"
 #include "prx/libkernel/Socket/include/SocketRuntime.hpp"
+#include "prx/libkernel/File/include/File.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -526,13 +527,14 @@ int APS5_VABI sceKernelDeleteAmprSystemEvent(KernelEqueue eq, int id) {
 }
 
 static int AddDescriptorEvent(KernelEqueue eq, int fd, std::size_t size, void* udata, int16_t filter) {
-    if (fd < GuestSockets::FirstDescriptor) {
+    const bool isSocket = GuestSockets::IsOpen(fd);
+    if (!isSocket && DescriptorIsOpen_nid_no_patch(fd)) {
         NotImplemented_nid_no_patch(filter == EVFILT_READ ? "sceKernelAddReadEvent: non-socket descriptor" : "sceKernelAddWriteEvent: non-socket descriptor");
     }
     if (size > 1) {
         NotImplemented_nid_no_patch(filter == EVFILT_READ ? "sceKernelAddReadEvent: low watermark" : "sceKernelAddWriteEvent: low watermark");
     }
-    if (!GuestSockets::IsOpen(fd)) {
+    if (!isSocket) {
         return SCE_KERNEL_ERROR_EBADF;
     }
     KernelEqueueEvent event{};

@@ -19,3 +19,5 @@ using Poller = int (*)(Entry* entries, int count, int timeoutMilliseconds);
 }
 
 extern "C" void KernelSetSocketPoller_nid_no_patch(KernelSocketPoll::Poller poller);
+extern "C" int KernelReserveSocketNumber_nid_no_patch(std::uintptr_t native);
+extern "C" void KernelReleaseSocketNumber_nid_no_patch(int number);
