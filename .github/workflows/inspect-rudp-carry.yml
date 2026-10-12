@@ -1,0 +1,37 @@
+name: Inspect RUDP carry sync
+
+on:
+  push:
+    branches: [carry/rudp-absent-calls]
+    paths: [.github/workflows/inspect-rudp-carry.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Inspect merge conflicts
+        id: merge
+        continue-on-error: true
+        run: |
+          git remote add upstream https://github.com/boykopovar/AnyPS5.git || true
+          git fetch upstream main
+          git reset --hard a5b1cf2b635dd07bbb9ce3ce1d3588f9a5cfae83
+          if git merge --no-commit --no-ff upstream/main; then
+            echo 'MERGE_CLEAN=1'
+            git diff --check upstream/main...HEAD
+          else
+            echo 'MERGE_CLEAN=0'
+            echo 'CONFLICTS_BEGIN'
+            git diff --name-only --diff-filter=U
+            echo 'CONFLICTS_END'
+            git status --short
+          fi
+      - name: Keep inspection non-red
+        if: always()
+        run: echo "merge_outcome=${{ steps.merge.outcome }}"
