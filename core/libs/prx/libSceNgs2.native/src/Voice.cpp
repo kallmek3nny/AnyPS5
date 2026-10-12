@@ -116,6 +116,10 @@ static void Patch(Ngs2Voice& voice, const Ngs2VoicePatchParam& patch) {
         return;
     }
     auto* dest = Ngs2FindVoice(patch.dest_handle);
+    if (dest == nullptr) {
+        if (auto* rack = Ngs2FindRack(patch.dest_handle); rack != nullptr && rack->rackId != SCE_NGS2_RACK_ID_SAMPLER && !rack->voices.empty())
+            dest = &rack->voices.front();
+    }
     if (dest == nullptr || dest->rack->system != voice.rack->system || dest->rack->rackId == SCE_NGS2_RACK_ID_SAMPLER) APS5_INVALID_ARG_EX;
     port.dest = dest;
 }

@@ -92,6 +92,38 @@ static void TestErrorsAndInfo() {
     Require(sceNgs2SystemGetInfo(system, &info, sizeof(info)) == SCE_NGS2_ERROR_INVALID_SYSTEM_HANDLE);
 }
 
+static void TestRackPatchDestination() {
+    const auto system = CreateSystem();
+    const auto masterRack = CreateRack(system, SCE_NGS2_RACK_ID_MASTERING);
+    const auto master = Voice(masterRack);
+    Control(master, SCE_NGS2_MASTERING_VOICE_PARAM_SETUP, Ngs2MasteringVoiceSetupParam{{}, 1, 0});
+    Control(master, SCE_NGS2_MASTERING_VOICE_PARAM_OUTPUT, Ngs2MasteringVoiceOutputParam{{}, 0, 0});
+    Event(master, SCE_NGS2_VOICE_EVENT_PLAY);
+
+    const std::vector<std::int16_t> pcm(Grain, 1234);
+    const auto sampler = Sampler(system, pcm, 0);
+    Patch(sampler, masterRack);
+    Ngs2VoicePortInfo portInfo{};
+    Require(sceNgs2VoiceGetPortInfo(sampler, 0, &portInfo, sizeof(portInfo)) == SCE_NGS2_OK);
+    Require(portInfo.dest_handle == master);
+    Event(sampler, SCE_NGS2_VOICE_EVENT_PLAY);
+    const auto out = RenderI16(system);
+    for (const auto sample : out) Require(sample == 1234);
+
+    const auto samplerRack = CreateRack(system, SCE_NGS2_RACK_ID_SAMPLER);
+    bool samplerRejected = false;
+    try { Patch(sampler, samplerRack); } catch (const std::invalid_argument&) { samplerRejected = true; }
+    Require(samplerRejected);
+
+    const auto otherSystem = CreateSystem();
+    const auto otherMasterRack = CreateRack(otherSystem, SCE_NGS2_RACK_ID_MASTERING);
+    bool crossSystemRejected = false;
+    try { Patch(sampler, otherMasterRack); } catch (const std::invalid_argument&) { crossSystemRejected = true; }
+    Require(crossSystemRejected);
+    Require(sceNgs2SystemDestroy(otherSystem, nullptr) == SCE_NGS2_OK);
+    Require(sceNgs2SystemDestroy(system, nullptr) == SCE_NGS2_OK);
+}
+
 static void TestPcmBlockEnd() {
     const auto system = CreateSystem();
     const auto master = Mastering(system, 1);
@@ -886,6 +918,7 @@ static void RenderAfterStaticTeardown() {
 int main() {
     Require(std::atexit(RenderAfterStaticTeardown) == 0);
     TestErrorsAndInfo();
+    TestRackPatchDestination();
     TestPcmBlockEnd();
     TestPan();
     TestPitchAndRepeat();
