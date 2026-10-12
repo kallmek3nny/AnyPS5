@@ -77,6 +77,10 @@ void Driver::run(std::uint32_t id) noexcept {
     if (id == 0) StartWorkerSampler();
     Submission submission;
     static const bool profile = std::getenv("APS5_PROFILE_DRAW") != nullptr;
+    static const auto idleStoreDelay = [] {
+        const char* value = std::getenv("APS5_IDLE_STORE_DELAY_MS");
+        return std::chrono::milliseconds(value != nullptr ? std::strtoul(value, nullptr, 10) : 10);
+    }();
     auto& costs = submissionCosts(id);
     try {
         for (;;) {
@@ -129,6 +133,12 @@ void Driver::run(std::uint32_t id) noexcept {
                     if (!completionsPending() || (id != 0 && Graphics::Recorder::PendingCompletionLabels() == 0)) {
                         const auto idleEpochAtCheck = idleEpoch.load(std::memory_order_acquire);
                         const bool storeIdleResults = id == 0 && allQueuesIdle() && !completionsPending();
+                        if (storeIdleResults && idleStoreDelay.count() != 0) {
+                            if (changed.wait_for(lock, idleStoreDelay, [&] {
+                                    return ready() || !allQueuesIdle() || completionsPending()
+                                        || idleEpoch.load(std::memory_order_acquire) != idleEpochAtCheck;
+                                })) continue;
+                        }
                         lock.unlock();
                         if (storeIdleResults) {
                             if (const auto localDevice = device.Load()) localDevice->StoreIdleResults();
