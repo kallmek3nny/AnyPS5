@@ -58,6 +58,7 @@ int APS5_VABI open_nid_postfix(const char*, int, int);
 int APS5_VABI socket_nid_postfix(int, int, int);
 int APS5_VABI bind_nid_postfix(int, const void*, std::uint32_t);
 int APS5_VABI close_nid_postfix(int);
+int APS5_VABI setsockopt_nid_postfix(int, int, int, const void*, std::uint32_t);
 int* APS5_VABI __error_nid_postfix();
 int APS5_VABI sceNetInetPton(int, const char*, void*);
 const char* APS5_VABI sceNetInetNtop(int, const void*, char*, std::uint32_t);
@@ -148,6 +149,24 @@ static void CheckEmptyEpoll() {
         waiter.get();
         if (abort) Require(sceNetEpollDestroy(waiting_epoll) == 0);
     }
+}
+
+static void CheckReceiveTimeout(int receiver, int sender, const std::array<std::uint8_t, 16>& address) {
+    const int timeout = 50000;
+    Require(sceNetSetsockopt(receiver, 0xffff, 0x1006, &timeout, sizeof(timeout)) == 0);
+    char buffer[8]{};
+    std::array<std::uint8_t, 16> source{};
+    std::uint32_t size = source.size();
+    NetIovec in[] = {{buffer, sizeof(buffer)}};
+    NetMsghdr receive{source.data(), static_cast<std::uint32_t>(source.size()), in, 1, nullptr, 0, 0};
+    Require(Failed(sceNetRecv(receiver, buffer, sizeof(buffer), 0), 35));
+    Require(Failed(sceNetRecvfrom(receiver, buffer, sizeof(buffer), 0, source.data(), &size), 35));
+    Require(Failed(sceNetRecvmsg(receiver, &receive, 0), 35));
+    const char datagram[] = "late";
+    Require(sceNetSendto(sender, datagram, sizeof(datagram), 0, address.data(), address.size()) == sizeof(datagram));
+    Require(sceNetRecv(receiver, buffer, sizeof(buffer), 0) == sizeof(datagram) && std::strcmp(buffer, datagram) == 0);
+    const int disabled = 0;
+    Require(sceNetSetsockopt(receiver, 0xffff, 0x1006, &disabled, sizeof(disabled)) == 0);
 }
 
 static void CheckMessages(int receiver, int sender, const std::array<std::uint8_t, 16>& address) {
@@ -343,6 +362,15 @@ int main() {
     CheckLinkLocalAllNodesIpv6();
     CheckUnspecifiedIpv6();
 
+    const int closed = sceNetSocket("closed-by-kernel", 2, 2, 17);
+    Require(closed >= 0);
+    const int enabled = 1;
+    Require(setsockopt_nid_postfix(closed, 0xffff, 0x20, &enabled, sizeof(enabled)) == 0);
+    Require(sceNetSetsockopt(closed, 0xffff, 0x20, &enabled, sizeof(enabled)) == 0);
+    Require(sceNetSetsockopt(closed, 0xffff, 0x4, &enabled, sizeof(enabled)) == 0);
+    Require(close_nid_postfix(closed) == 0);
+    Require(Failed(sceNetSocketClose(closed), 9));
+
     const int listener = sceNetSocket(nullptr, 2, 1, 6);
     Require(listener >= 0);
     std::array<std::uint8_t, 16> address{16, 2, 0, 0, 127, 0, 0, 1};
@@ -487,6 +515,7 @@ int main() {
     Require(stdio_readable[0] == 0 && stdio_writable[0] == 6);
     stdio_readable[0] = 1;
     Require(select_nid_postfix(1, stdio_readable, nullptr, nullptr, poll_now) == 0 && stdio_readable[0] == 0);
+    CheckReceiveTimeout(udp_receiver, udp_sender, address);
     CheckMessages(udp_receiver, udp_sender, address);
     Require(sceNetSocketClose(udp_sender) == 0);
     Require(sceNetSocketClose(udp_receiver) == 0);
