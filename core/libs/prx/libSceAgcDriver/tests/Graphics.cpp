@@ -139,6 +139,26 @@ void hdrComponentSwapTests() {
     Require(DecodeState(queue).colors.size() == 2, "compatible constants rejected mixed component orders");
 }
 
+void lineStripTests() {
+    auto lineStrip = makeState();
+    lineStrip.userConfig[0x242] = 3;
+    lineStrip.context[0x1b3] = 2;
+    lineStrip.context[0x1b4] = 2;
+    auto stripState = AgcDriver::Graphics::DecodeState(lineStrip);
+    Require(stripState.topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP && !stripState.primitiveRestart, "line strip topology was not decoded");
+    Require(AgcDriver::Graphics::DrawRejection(lineStrip, false).empty(), "non-indexed line strip was rejected");
+    lineStrip.userConfig[0x24b] = 1;
+    lineStrip.context[0x103] = 0xffffffffu;
+    stripState = AgcDriver::Graphics::DecodeState(lineStrip);
+    Require(stripState.primitiveRestart, "indexed line strip lost primitive restart");
+    Require(AgcDriver::Graphics::DrawRejection(lineStrip, true).empty(), "indexed line strip with restart was rejected");
+    lineStrip.context[0x103] = 5;
+    Require(AgcDriver::Graphics::DrawRejection(lineStrip, true).find("all ones") != std::string::npos, "line strip accepted an unsupported restart index");
+    lineStrip.userConfig[0x24b] = 0;
+    lineStrip.context[0x205] = 0x240u | 0x1800u | 0x2000u;
+    expectFailure([&] { AgcDriver::Graphics::DecodeState(lineStrip); }, "polygon mode");
+}
+
 void stateTests() {
     AgcDriver::QueueState initial;
     Require(initial.context.at(0x200) == 0 && initial.context.at(0x83) == 0xffff, "initial context state is missing");
@@ -165,23 +185,7 @@ void stateTests() {
     Require(state.color.address == reinterpret_cast<std::uintptr_t>(colorMemory.data()) && state.color.bytes == colorMemory.size(), "render-target address or size changed");
     Require(state.viewport.y == 4 && state.viewport.height == -4, "negative viewport height was lost");
     Require(state.color.format == VK_FORMAT_R8G8B8A8_UNORM, "RGBA format changed");
-    auto lineStrip = makeState();
-    lineStrip.userConfig[0x242] = 3;
-    lineStrip.context[0x1b3] = 2;
-    lineStrip.context[0x1b4] = 2;
-    auto stripState = AgcDriver::Graphics::DecodeState(lineStrip);
-    Require(stripState.topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP && !stripState.primitiveRestart, "line strip topology was not decoded");
-    Require(AgcDriver::Graphics::DrawRejection(lineStrip, false).empty(), "non-indexed line strip was rejected");
-    lineStrip.userConfig[0x24b] = 1;
-    lineStrip.context[0x103] = 0xffffffffu;
-    stripState = AgcDriver::Graphics::DecodeState(lineStrip);
-    Require(stripState.primitiveRestart, "indexed line strip lost primitive restart");
-    Require(AgcDriver::Graphics::DrawRejection(lineStrip, true).empty(), "indexed line strip with restart was rejected");
-    lineStrip.context[0x103] = 5;
-    Require(AgcDriver::Graphics::DrawRejection(lineStrip, true).find("all ones") != std::string::npos, "line strip accepted an unsupported restart index");
-    lineStrip.userConfig[0x24b] = 0;
-    lineStrip.context[0x205] = 0x240u | 0x1800u | 0x2000u;
-    expectFailure([&] { AgcDriver::Graphics::DecodeState(lineStrip); }, "polygon mode");
+    lineStripTests();
     queue.userConfig[0x24b] = 1;
     queue.context[0x1b3] = 2;
     queue.context[0x1b4] = 2;
@@ -4924,6 +4928,11 @@ int main(int argc, char** argv) {
     setenv("APS5_HEAP_MIRROR_MIB", "4", 1);
 #endif
     try {
+        if (argc == 2 && std::string_view(argv[1]) == "--line-strip-state") {
+            lineStripTests();
+            std::cout << "Line strip state tests passed\n";
+            return 0;
+        }
         if (argc == 2 && std::string_view(argv[1]) == "--descriptor-layout-flags") {
             descriptorLayoutFlagTests();
             std::cout << "Descriptor layout native and captured binding flags passed\n";
