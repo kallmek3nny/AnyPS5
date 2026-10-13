@@ -122,14 +122,19 @@ std::uint64_t ProgramHeaderLayoutBuilder::ComputeExtraBlockVaddr(
         throw Domain::RelinkerException("No kept PT_LOAD segment to anchor the extra block against");
 
     const std::uint64_t align = kDefaultLoadAlignment;
-    const std::uint64_t offsetRemainder = extraBlockOffset & (align - 1);
-    const std::uint64_t alignedFloor = highestVaddrEnd & ~(align - 1);
-    std::uint64_t vaddr = alignedFloor | offsetRemainder;
-    if (vaddr < highestVaddrEnd)
-        vaddr += align;
-    if (vaddr < highestVaddrEnd)
+    const std::uint64_t pageMask = align - 1;
+    const std::uint64_t offsetRemainder = extraBlockOffset & pageMask;
+    std::uint64_t alignedCeiling = highestVaddrEnd;
+    const std::uint64_t endRemainder = highestVaddrEnd & pageMask;
+    if (endRemainder != 0) {
+        const std::uint64_t delta = align - endRemainder;
+        if (delta > std::numeric_limits<std::uint64_t>::max() - highestVaddrEnd)
+            throw Domain::RelinkerException("Extra block vaddr computation overflowed");
+        alignedCeiling += delta;
+    }
+    if (offsetRemainder > std::numeric_limits<std::uint64_t>::max() - alignedCeiling)
         throw Domain::RelinkerException("Extra block vaddr computation overflowed");
-    return vaddr;
+    return alignedCeiling + offsetRemainder;
 }
 
 std::vector<Domain::ProgramHeader> ProgramHeaderLayoutBuilder::_keptHeaders(const std::vector<Domain::ProgramHeader>& originalHeaders) const {
