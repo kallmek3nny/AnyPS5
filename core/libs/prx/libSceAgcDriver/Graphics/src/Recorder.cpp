@@ -2259,8 +2259,6 @@ void Recorder::RecordStore(VkBuffer buffer, VkDeviceSize offset, std::span<const
             return;
         }
         if (offset == pendingEnd && run.bytes.size() + bytes.size() <= 65536) {
-            // A joined store shares the pending vkCmdUpdateBuffer, which no barrier precedes: one
-            // that overlaps a store the run already recorded takes the WAW barrier below instead.
             if (!JoinWawCheck() || !overlapsRecorded()) {
                 run.bytes.insert(run.bytes.end(), bytes.begin(), bytes.end());
                 storesJoined.fetch_add(1, std::memory_order_relaxed);
@@ -2271,10 +2269,10 @@ void Recorder::RecordStore(VkBuffer buffer, VkDeviceSize offset, std::span<const
     }
     flushPendingStore();
     const bool waw = overlapsRecorded();
-    if (waw) {
-        recordBarrier(open->commands, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+    if (!run.recorded.empty()) {
+        recordBarrier(open->commands, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_HOST_READ_BIT);
         CountBarriers(CommandClass::LabelRun);
-        storeWawBarriers.fetch_add(1, std::memory_order_relaxed);
+        if (waw) storeWawBarriers.fetch_add(1, std::memory_order_relaxed);
     }
     run.buffer = buffer;
     run.offset = offset;
