@@ -135,9 +135,10 @@ struct Store {
     std::uint32_t value;
 };
 
-void Check(std::span<const Store> stores) {
+void Check(const char* name, std::span<const Store> stores) {
     mock = {};
     std::lock_guard gpu(AgcDriver::GuestMemory::GpuMutex());
+    const auto before = Recorder::StoreCounts();
     Context context{};
     context.device = reinterpret_cast<VkDevice>(mock.next++);
     context.queue = reinterpret_cast<VkQueue>(mock.next++);
@@ -149,8 +150,14 @@ void Check(std::span<const Store> stores) {
         recorder.Sync();
     }
     std::vector<std::size_t> updates;
+    std::size_t barriers = 0;
     for (std::size_t index = 0; index < mock.commands.size(); ++index)
         if (mock.commands[index].update) updates.push_back(index);
+        else ++barriers;
+    const auto after = Recorder::StoreCounts();
+    std::printf("%s: stores=%zu updates=%zu LabelRun_barriers=%zu waw_barriers=%llu\n", name, stores.size(),
+        updates.size(), barriers, static_cast<unsigned long long>(after.wawBarriers - before.wawBarriers));
+    Expect(barriers == (stores.empty() ? 0 : stores.size() + 1), "the run emitted an unexpected number of barriers");
     Expect(updates.size() == stores.size(), "separate stores did not produce the expected updates");
     if (updates.size() != stores.size()) return;
     for (std::size_t index = 0; index < stores.size(); ++index) {
@@ -179,10 +186,13 @@ int main() {
     try {
         const auto first = reinterpret_cast<VkBuffer>(std::uintptr_t{0x1000});
         const auto second = reinterpret_cast<VkBuffer>(std::uintptr_t{0x2000});
+        const std::array single{Store{first, 0, 0x12345678}};
         const std::array separate{Store{first, 0, 0x11111111}, Store{second, 0, 0x22222222}, Store{first, 0, 0x33333333}};
         const std::array disjoint{Store{first, 0, 0x44444444}, Store{first, 8, 0x55555555}};
-        Check(separate);
-        Check(disjoint);
+        Check("empty", {});
+        Check("single", single);
+        Check("separate buffers with overlap", separate);
+        Check("disjoint ranges", disjoint);
     } catch (const std::exception& error) {
         std::fprintf(stderr, "inline store ordering: %s\n", error.what());
         return 1;
